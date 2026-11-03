@@ -1,9 +1,11 @@
+
 name: Build viscosX Studio APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -13,42 +15,54 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # 2. Install Java 17
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
       - name: Check Java
         run: java -version
 
+      # 3. Install Gradle separately
       - name: Install Gradle
         run: |
-          wget https://services.gradle.org/distributions/gradle-8.9-bin.zip
-          unzip -q gradle-8.9-bin.zip
-          echo "$GITHUB_WORKSPACE/gradle-8.9/bin" >> "$GITHUB_PATH"
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip -O /tmp/gradle-8.9-bin.zip
+          unzip -q /tmp/gradle-8.9-bin.zip -d /tmp
+          echo "/tmp/gradle-8.9/bin" >> "$GITHUB_PATH"
 
+      # 4. Find and extract Android project ZIP
       - name: Extract Android project
         run: |
-          ZIP=$(find . -maxdepth 1 -iname '*.zip' | head -n 1)
+          ZIP=$(find . -maxdepth 1 -type f -iname '*.zip' \
+            ! -name 'gradle-8.9-bin.zip' \
+            ! -name 'gradle-*.zip' \
+            -print -quit)
+
           if [ -z "$ZIP" ]; then
-            echo "Android project ZIP not found"
+            echo "ERROR: Android project ZIP not found!"
+            echo "Available ZIP files:"
+            find . -maxdepth 1 -type f -iname '*.zip'
             exit 1
           fi
+
+          echo "Found Android project: $ZIP"
+
           mkdir -p source
           unzip -q "$ZIP" -d source
 
-      
+          echo "Android project extracted successfully"
+
+      # 5. Find Android Gradle settings
       - name: Find Android project
         run: |
           echo "========== EXTRACTED FILES =========="
           find source -maxdepth 5 -type f | head -150
-
-          echo "========== SEARCHING GRADLE FILES =========="
-          find source -type f \( \
-            -name "settings.gradle" -o \
-            -name "settings.gradle.kts" -o \
-            -name "build.gradle" -o \
-            -name "build.gradle.kts" -o \
-            -name "gradlew" \
-          \) -print
 
           SETTINGS=$(find source -type f \( \
             -name settings.gradle -o \
@@ -56,28 +70,39 @@ jobs:
           \) -not -path '*/.gradle/*' -print -quit)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERROR: No Gradle settings file found."
-            echo "The ZIP may not contain the complete Android project."
+            echo "ERROR: Gradle settings file not found!"
+            echo "The ZIP may not contain a complete Android project."
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
+
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "SUCCESS: Found Android project at $PROJECT_DIR"
-          
-      - name: Build debug APK
-        run: gradle -p "$PROJECT_DIR" --no-daemon assembleDebug
+          echo "Found Android project at: $PROJECT_DIR"
 
+      # 6. Build Android APK
+      - name: Build debug APK
+        run: |
+          gradle -p "$PROJECT_DIR" --no-daemon assembleDebug
+
+      # 7. Find generated APK
       - name: Locate APK
         run: |
-          APK=$(find "$PROJECT_DIR" -type f -path '*/build/outputs/apk/debug/*.apk' -print -quit)
+          APK=$(find "$PROJECT_DIR" -type f \
+            -path '*/build/outputs/apk/debug/*.apk' \
+            -print -quit)
+
           if [ -z "$APK" ]; then
-            echo "APK file not found"
+            echo "ERROR: APK file not found!"
             exit 1
           fi
+
           echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
+          echo "APK generated successfully: $APK"
+
+      # 8. Upload APK to GitHub
       - name: Upload APK
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
         with:
