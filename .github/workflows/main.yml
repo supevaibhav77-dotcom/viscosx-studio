@@ -1,4 +1,3 @@
-
 name: Build viscosX Studio APK
 
 on:
@@ -15,20 +14,18 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+      - name: Check Java
+        run: java -version
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
+      - name: Install Gradle
+        run: |
+          wget https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q gradle-8.9-bin.zip
+          echo "$GITHUB_WORKSPACE/gradle-8.9/bin" >> "$GITHUB_PATH"
 
-      - name: Extract Android project ZIP
+      - name: Extract Android project
         run: |
           ZIP=$(find . -maxdepth 1 -iname '*.zip' | head -n 1)
           if [ -z "$ZIP" ]; then
@@ -38,15 +35,34 @@ jobs:
           mkdir -p source
           unzip -q "$ZIP" -d source
 
-      - name: Build Android APK
-        working-directory: source/viscosx_studio_android
-        run: gradle --no-daemon assembleDebug
+      - name: Find Android project
+        run: |
+          SETTINGS=$(find source -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
+          if [ -z "$SETTINGS" ]; then
+            echo "Gradle settings file not found in ZIP"
+            exit 1
+          fi
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Found project at $PROJECT_DIR"
+
+      - name: Build debug APK
+        run: gradle -p "$PROJECT_DIR" --no-daemon assembleDebug
+
+      - name: Locate APK
+        run: |
+          APK=$(find "$PROJECT_DIR" -type f -path '*/build/outputs/apk/debug/*.apk' -print -quit)
+          if [ -z "$APK" ]; then
+            echo "APK file not found"
+            exit 1
+          fi
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
         with:
           name: viscosX-Studio-APK
-          path: source/viscosx_studio_android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.APK_PATH }}
           if-no-files-found: error
           retention-days: 14
           
