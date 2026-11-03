@@ -1,4 +1,3 @@
-
 name: Build viscosX Studio APK
 
 on:
@@ -45,3 +44,4 @@ jobs:
           path: source/viscosx_studio_android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
+# Trigger a new build
